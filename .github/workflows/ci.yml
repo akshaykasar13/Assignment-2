@@ -5,7 +5,7 @@ on:
     branches: [ main ]
   workflow_dispatch:
     inputs:
-      force_fail:
+      force_fail: true
         description: 'Force the job to fail (easy failure test)'
         type: boolean
         default: true
