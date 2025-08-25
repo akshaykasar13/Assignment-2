@@ -1,4 +1,4 @@
-name: CI (Self-Hosted → Dashboard)
+name: CI (Self-Hosted -> Dashboard)
 
 on:
   push:
@@ -22,50 +22,45 @@ env:
 
 jobs:
   build:
-    # Match your self-hosted Windows runner labels (adjust if you added custom labels)
+    # Your self-hosted Windows runner
     runs-on: [self-hosted, Windows]
+
+    defaults:
+      run:
+        shell: powershell  # <- use Windows PowerShell, not pwsh
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Mark start time
-        shell: pwsh
         run: |
-          # more reliable than Get-Date -UFormat %s on all PS versions
           $ts = [int]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
           "START_TS=$ts" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Probe dashboard health
-        shell: pwsh
         env:
           DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
         run: |
           if (-not $env:DASHBOARD_URL) {
-            Write-Error "DASHBOARD_URL secret not set. Set to http://localhost:8000 for a self-hosted runner."
+            Write-Error "DASHBOARD_URL secret not set. Set it to http://localhost:8000 for a self-hosted runner."
             exit 1
           }
           Write-Host "Probing $env:DASHBOARD_URL/health"
           $r = Invoke-RestMethod -Method Get -Uri "$env:DASHBOARD_URL/health"
           Write-Host "Health OK:" ($r | ConvertTo-Json -Depth 4)
 
-      # Example "work" so the job takes some time
       - name: Do some work
-        shell: pwsh
         run: |
           Write-Host "Running simple step on self-hosted runner..."
           Start-Sleep -Seconds 3
 
-      # Flip this with the workflow input when running manually
       - name: Fail intentionally (for testing)
         if: ${{ github.event.inputs.force_fail == 'true' }}
-        shell: pwsh
         run: exit 1
 
-      # Always report the final result to the dashboard (success/failure/cancelled)
       - name: Notify dashboard (always)
         if: ${{ always() }}
-        shell: pwsh
         env:
           DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
           JOB_STATUS: ${{ job.status }}
