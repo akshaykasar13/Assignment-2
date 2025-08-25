@@ -8,7 +8,7 @@ on:
       force_fail:
         description: 'Force the job to fail (easy failure test)'
         required: false
-        default: "true"   # default is string "true"
+        default: "false"   # default is string "true"
 
 env:
   PIPELINE_NAME: ${{ github.workflow }}
