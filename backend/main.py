@@ -1,5 +1,6 @@
 import os
 import asyncio
+import logging
 from typing import List, Optional
 
 from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect, Query, Response
@@ -14,11 +15,14 @@ from websocket_manager import WebSocketManager
 from emailer import send_failure_alert
 from utils import utcnow
 
-app = FastAPI(title="CI/CD Pipeline Health API", version="0.1.3")
+# ---------- logging ----------
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("cicd")
 
-# ----------------------------- CORS -----------------------------
-# For quick dev, set CORS_ALLOW_ALL=1 (default). For strict, set CORS_ALLOW_ALL=0
-# and (optionally) FRONTEND_ORIGINS="http://localhost:5173,http://127.0.0.1:5173"
+app = FastAPI(title="CI/CD Pipeline Health API", version="0.1.4")
+
+# ---------- CORS ----------
+# For dev, allow all. For strict, set CORS_ALLOW_ALL=0 and FRONTEND_ORIGINS list.
 CORS_ALLOW_ALL = os.getenv("CORS_ALLOW_ALL", "1") == "1"
 if CORS_ALLOW_ALL:
     app.add_middleware(
@@ -29,6 +33,7 @@ if CORS_ALLOW_ALL:
         expose_headers=["*"],
         allow_credentials=False,
     )
+    logger.info("[cors] allow_origin_regex .* (open CORS for dev)")
 else:
     origins_from_env = os.getenv("FRONTEND_ORIGINS") or os.getenv("FRONTEND_ORIGIN", "")
     parsed = [o.strip().rstrip("/") for o in origins_from_env.split(",") if o.strip()]
@@ -42,13 +47,13 @@ else:
         expose_headers=["*"],
         allow_credentials=False,
     )
+    logger.info(f"[cors] allow_origins {allowed_origins}")
 
-# Handle stray preflights explicitly
 @app.options("/{rest_of_path:path}")
 def cors_preflight(rest_of_path: str):
     return Response(status_code=204)
 
-# ----------------------------- DB -----------------------------
+# ---------- DB ----------
 def get_db():
     db = SessionLocal()
     try:
@@ -58,7 +63,7 @@ def get_db():
 
 init_db()
 
-# ----------------------------- WS -----------------------------
+# ---------- WebSocket ----------
 ws_manager = WebSocketManager()
 
 @app.get("/health")
@@ -76,7 +81,7 @@ async def ws_metrics(websocket: WebSocket):
     except Exception:
         ws_manager.disconnect(websocket)
 
-# ----------------------------- Helpers -----------------------------
+# ---------- Helpers ----------
 def get_or_create_pipeline(db: Session, name: str) -> models.Pipeline:
     pipeline = db.execute(select(models.Pipeline).where(models.Pipeline.name == name)).scalar_one_or_none()
     if pipeline is None:
@@ -92,7 +97,7 @@ def _last_status_to_schema(value):
     except Exception:
         return schemas.RunStatus(value)        # plain string -> schema enum
 
-# ----------------------------- Ingest -----------------------------
+# ---------- Ingest ----------
 @app.post("/api/events/run", response_model=schemas.RunOut)
 def ingest_run(event: schemas.RunIn, db: Session = Depends(get_db)):
     pipeline = get_or_create_pipeline(db, event.pipeline)
@@ -119,6 +124,11 @@ def ingest_run(event: schemas.RunIn, db: Session = Depends(get_db)):
     db.add(new_run)
     db.commit()
     db.refresh(new_run)
+
+    logger.info(
+        f"[ingest] pipeline={pipeline.name} status={event.status} "
+        f"start={started_at} finish={finished_at} by={event.triggered_by}"
+    )
 
     if event.status == schemas.RunStatus.failure:
         subj = f"[CI/CD] Failure: {pipeline.name} @ {finished_at or started_at}"
@@ -147,7 +157,7 @@ def ingest_run(event: schemas.RunIn, db: Session = Depends(get_db)):
         triggered_by=new_run.triggered_by,
     )
 
-# ----------------------------- Reads -----------------------------
+# ---------- Reads ----------
 @app.get("/api/runs", response_model=List[schemas.RunOut])
 def list_runs(limit: int = 50, db: Session = Depends(get_db)):
     stmt = (
@@ -179,7 +189,6 @@ def _pipeline_metrics(db: Session, window_start):
     if window_start:
         filters.append(models.Run.started_at >= window_start)
 
-    # FIX: group by BOTH id and name for Postgres
     stmt = (
         select(
             models.Pipeline.name,
@@ -275,12 +284,10 @@ def compute_summary_metrics(db: Session, minutes: Optional[int] = None) -> dict:
         "per_pipeline": [p.model_dump() for p in per],
     }
 
-# Return plain dict so FastAPI handles JSON & response_model
 @app.get("/api/metrics/summary", response_model=schemas.SummaryMetrics)
 def metrics_summary(minutes: Optional[int] = Query(None), db: Session = Depends(get_db)):
     return compute_summary_metrics(db, minutes)
 
-# ----------------------------- Simulator -----------------------------
 @app.post("/api/simulate")
 def simulate(count: int = 10, fail_rate: float = 0.25, pipelines: Optional[List[str]] = None, db: Session = Depends(get_db)):
     import random

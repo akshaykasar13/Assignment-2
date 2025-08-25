@@ -6,9 +6,13 @@ on:
   workflow_dispatch:
     inputs:
       force_fail:
-        description: 'Force the job to fail (easy failure test)'
-        required: false
-        default: "false"   # default is string "true"
+        description: 'Force the job to fail (true/false)'
+        type: choice
+        options: [ "true", "false" ]
+        default: "true"
+
+permissions:
+  contents: read
 
 env:
   PIPELINE_NAME: ${{ github.workflow }}
@@ -18,7 +22,9 @@ env:
 
 jobs:
   build:
-    runs-on: self-hosted   # your Windows 11 runner
+    # Match your self-hosted Windows runner labels (adjust if you added custom labels)
+    runs-on: [self-hosted, Windows]
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,42 +32,62 @@ jobs:
       - name: Mark start time
         shell: pwsh
         run: |
-          $ts = [int][double]::Parse((Get-Date -UFormat %s))
+          # more reliable than Get-Date -UFormat %s on all PS versions
+          $ts = [int]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
           "START_TS=$ts" | Out-File -FilePath $env:GITHUB_ENV -Append
 
+      - name: Probe dashboard health
+        shell: pwsh
+        env:
+          DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
+        run: |
+          if (-not $env:DASHBOARD_URL) {
+            Write-Error "DASHBOARD_URL secret not set. Set to http://localhost:8000 for a self-hosted runner."
+            exit 1
+          }
+          Write-Host "Probing $env:DASHBOARD_URL/health"
+          $r = Invoke-RestMethod -Method Get -Uri "$env:DASHBOARD_URL/health"
+          Write-Host "Health OK:" ($r | ConvertTo-Json -Depth 4)
+
+      # Example "work" so the job takes some time
       - name: Do some work
         shell: pwsh
         run: |
           Write-Host "Running simple step on self-hosted runner..."
           Start-Sleep -Seconds 3
 
+      # Flip this with the workflow input when running manually
       - name: Fail intentionally (for testing)
         if: ${{ github.event.inputs.force_fail == 'true' }}
         shell: pwsh
         run: exit 1
 
-      - name: Notify dashboard
+      # Always report the final result to the dashboard (success/failure/cancelled)
+      - name: Notify dashboard (always)
         if: ${{ always() }}
         shell: pwsh
         env:
           DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
           JOB_STATUS: ${{ job.status }}
         run: |
-          $end = [int][double]::Parse((Get-Date -UFormat %s))
+          $end = [int]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
           $dur = $end - [int]$env:START_TS
-          $startIso = [DateTimeOffset]::FromUnixTimeSeconds([int]$env:START_TS).UtcDateTime.ToString("o")
-          $finishIso = (Get-Date).ToUniversalTime().ToString("o")
+          $startIso  = [DateTimeOffset]::FromUnixTimeSeconds([int]$env:START_TS).UtcDateTime.ToString("o")
+          $finishIso = [DateTimeOffset]::FromUnixTimeSeconds($end).UtcDateTime.ToString("o")
           $status = if ($env:JOB_STATUS -eq "success") { "success" } else { "failure" }
 
           $body = @{
-            pipeline = "${{ github.workflow }}"
-            status = $status
+            pipeline     = "${{ github.workflow }}"
+            status       = $status
             duration_sec = $dur
-            started_at = $startIso
-            finished_at = $finishIso
-            branch = "${{ github.ref_name }}"
-            commit = "${{ github.sha }}"
+            started_at   = $startIso
+            finished_at  = $finishIso
+            branch       = "${{ github.ref_name }}"
+            commit       = "${{ github.sha }}"
             triggered_by = "${{ github.actor }}"
-          } | ConvertTo-Json -Depth 4
+          } | ConvertTo-Json -Depth 10
 
-          Invoke-RestMethod -Method Post -Uri "$env:DASHBOARD_URL/api/events/run" -ContentType "application/json" -Body $body
+          Write-Host "POST -> $env:DASHBOARD_URL/api/events/run"
+          Write-Host $body
+          $resp = Invoke-RestMethod -Method Post -Uri "$env:DASHBOARD_URL/api/events/run" -ContentType "application/json" -Body $body
+          Write-Host "Ingest OK:" ($resp | ConvertTo-Json -Depth 10)
