@@ -1,9 +1,8 @@
 import os
-import asyncio
 import logging
 from typing import List, Optional
 
-from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect, Query, Response, HTTPException
+from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect, Query, Response, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
@@ -19,7 +18,7 @@ from utils import utcnow
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("cicd")
 
-app = FastAPI(title="CI/CD Pipeline Health API", version="0.1.5")
+app = FastAPI(title="CI/CD Pipeline Health API", version="0.1.6")
 
 # ---------- CORS ----------
 # DEV default: allow all. For strict: set CORS_ALLOW_ALL=0 and FRONTEND_ORIGINS.
@@ -99,7 +98,11 @@ def _last_status_to_schema(value):
 
 # ---------- Ingest ----------
 @app.post("/api/events/run", response_model=schemas.RunOut)
-def ingest_run(event: schemas.RunIn, db: Session = Depends(get_db)):
+def ingest_run(
+    event: schemas.RunIn,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     try:
         pipeline = get_or_create_pipeline(db, event.pipeline)
 
@@ -145,9 +148,12 @@ def ingest_run(event: schemas.RunIn, db: Session = Depends(get_db)):
             except Exception as e:
                 logger.warning(f"[alerts] send_failure_alert failed: {e}")
 
-        # Recompute & broadcast metrics (JSON-safe)
+        # Recompute & broadcast metrics (schedule via BackgroundTasks to avoid event loop issues)
         summary = compute_summary_metrics(db, minutes=None)
-        asyncio.create_task(ws_manager.broadcast({"type": "metrics_update", "payload": jsonable_encoder(summary)}))
+        background_tasks.add_task(
+            ws_manager.broadcast,
+            {"type": "metrics_update", "payload": jsonable_encoder(summary)},
+        )
 
         return schemas.RunOut(
             id=new_run.id,
@@ -163,7 +169,7 @@ def ingest_run(event: schemas.RunIn, db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         logger.exception(f"[ingest] error: {e}")
-        # Surface the error to the client so your workflow logs show the reason
+        # Surface the error to the client so your workflow prints a clear message
         raise HTTPException(status_code=400, detail=str(e))
 
 # ---------- Reads ----------
