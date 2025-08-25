@@ -1,0 +1,73 @@
+name: ci-cd pipeline
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      force_fail:
+        description: 'Force the job to fail (easy failure test)'
+        type: boolean
+        default: true
+
+env:
+  PIPELINE_NAME: ${{ github.workflow }}
+  BRANCH: ${{ github.ref_name }}
+  COMMIT: ${{ github.sha }}
+  ACTOR: ${{ github.actor }}
+
+jobs:
+  build:
+    runs-on: self-hosted   # your Windows 11 runner
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # mark start time (unix seconds) for duration calculation
+      - name: Mark start time
+        shell: pwsh
+        run: |
+          $ts = [int][double]::Parse((Get-Date -UFormat %s))
+          "START_TS=$ts" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      # do some trivial work (no Node/Python required)
+      - name: Do some work
+        shell: pwsh
+        run: |
+          Write-Host "Running simple step on self-hosted runner..."
+          Start-Sleep -Seconds 3
+
+      # deliberately fail if requested (lets you test alerts + UI)
+      - name: Fail intentionally (for testing)
+        if: ${{ inputs.force_fail == true }}
+        shell: pwsh
+        run: exit 1
+
+      # always notify the dashboard (success or failure)
+      - name: Notify dashboard
+        if: ${{ always() }}
+        shell: pwsh
+        env:
+          DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          $end = [int][double]::Parse((Get-Date -UFormat %s))
+          $dur = $end - [int]$env:START_TS
+          $startIso = [DateTimeOffset]::FromUnixTimeSeconds([int]$env:START_TS).UtcDateTime.ToString("o")
+          $finishIso = (Get-Date).ToUniversalTime().ToString("o")
+          $status = if ($env:JOB_STATUS -eq "success") { "success" } else { "failure" }
+
+          $body = @{
+            pipeline = "${{ github.workflow }}"
+            status = $status
+            duration_sec = $dur
+            started_at = $startIso
+            finished_at = $finishIso
+            branch = "${{ github.ref_name }}"
+            commit = "${{ github.sha }}"
+            triggered_by = "${{ github.actor }}"
+          } | ConvertTo-Json -Depth 4
+
+          Write-Host "Posting to $env:DASHBOARD_URL/api/events/run"
+          Write-Host $body
+          Invoke-RestMethod -Method Post -Uri "$env:DASHBOARD_URL/api/events/run" -ContentType "application/json" -Body $body
