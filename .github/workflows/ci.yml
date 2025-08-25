@@ -22,12 +22,12 @@ env:
 
 jobs:
   build:
-    # Your self-hosted Windows runner
+    # Use your Windows self-hosted runner labels.
     runs-on: [self-hosted, Windows]
 
     defaults:
       run:
-        shell: powershell  # <- use Windows PowerShell, not pwsh
+        shell: powershell  # Use Windows PowerShell (pwsh not required)
 
     steps:
       - name: Checkout
@@ -43,16 +43,21 @@ jobs:
           DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
         run: |
           if (-not $env:DASHBOARD_URL) {
-            Write-Error "DASHBOARD_URL secret not set. Set it to http://localhost:8000 for a self-hosted runner."
+            Write-Error "DASHBOARD_URL secret not set. For self-hosted on same box use: http://localhost:8000"
             exit 1
           }
           Write-Host "Probing $env:DASHBOARD_URL/health"
-          $r = Invoke-RestMethod -Method Get -Uri "$env:DASHBOARD_URL/health"
-          Write-Host "Health OK:" ($r | ConvertTo-Json -Depth 4)
+          try {
+            $r = Invoke-RestMethod -Method Get -Uri "$env:DASHBOARD_URL/health"
+            Write-Host "Health OK:" ($r | ConvertTo-Json -Depth 4)
+          } catch {
+            Write-Error "Cannot reach dashboard health endpoint."
+            throw
+          }
 
       - name: Do some work
         run: |
-          Write-Host "Running simple step on self-hosted runner..."
+          Write-Host "Running a trivial step..."
           Start-Sleep -Seconds 3
 
       - name: Fail intentionally (for testing)
@@ -84,5 +89,27 @@ jobs:
 
           Write-Host "POST -> $env:DASHBOARD_URL/api/events/run"
           Write-Host $body
-          $resp = Invoke-RestMethod -Method Post -Uri "$env:DASHBOARD_URL/api/events/run" -ContentType "application/json" -Body $body
-          Write-Host "Ingest OK:" ($resp | ConvertTo-Json -Depth 10)
+
+          try {
+            # Use Invoke-WebRequest so we can read error bodies too
+            $resp = Invoke-WebRequest -UseBasicParsing -Method Post `
+              -Uri "$env:DASHBOARD_URL/api/events/run" `
+              -ContentType "application/json" `
+              -Body $body
+            Write-Host "Ingest OK (status $($resp.StatusCode))"
+            Write-Host $resp.Content
+          } catch {
+            Write-Warning "Ingest FAILED"
+            if ($_.Exception.Response) {
+              $status = $_.Exception.Response.StatusCode.value__
+              $stream = $_.Exception.Response.GetResponseStream()
+              if ($stream) {
+                $reader = New-Object IO.StreamReader($stream)
+                $text = $reader.ReadToEnd()
+                Write-Host "StatusCode: $status"
+                Write-Host "Error body:"
+                Write-Host $text
+              }
+            }
+            throw
+          }

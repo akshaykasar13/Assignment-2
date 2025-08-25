@@ -3,7 +3,7 @@ import asyncio
 import logging
 from typing import List, Optional
 
-from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect, Query, Response
+from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect, Query, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
@@ -19,10 +19,10 @@ from utils import utcnow
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("cicd")
 
-app = FastAPI(title="CI/CD Pipeline Health API", version="0.1.4")
+app = FastAPI(title="CI/CD Pipeline Health API", version="0.1.5")
 
 # ---------- CORS ----------
-# For dev, allow all. For strict, set CORS_ALLOW_ALL=0 and FRONTEND_ORIGINS list.
+# DEV default: allow all. For strict: set CORS_ALLOW_ALL=0 and FRONTEND_ORIGINS.
 CORS_ALLOW_ALL = os.getenv("CORS_ALLOW_ALL", "1") == "1"
 if CORS_ALLOW_ALL:
     app.add_middleware(
@@ -100,62 +100,71 @@ def _last_status_to_schema(value):
 # ---------- Ingest ----------
 @app.post("/api/events/run", response_model=schemas.RunOut)
 def ingest_run(event: schemas.RunIn, db: Session = Depends(get_db)):
-    pipeline = get_or_create_pipeline(db, event.pipeline)
+    try:
+        pipeline = get_or_create_pipeline(db, event.pipeline)
 
-    started_at = event.started_at or utcnow()
-    finished_at = event.finished_at
-    duration = event.duration_sec
-    if event.status != schemas.RunStatus.running:
-        if finished_at is None:
-            finished_at = utcnow()
-        if duration is None and started_at and finished_at:
-            duration = (finished_at - started_at).total_seconds()
+        started_at = event.started_at or utcnow()
+        finished_at = event.finished_at
+        duration = event.duration_sec
+        if event.status != schemas.RunStatus.running:
+            if finished_at is None:
+                finished_at = utcnow()
+            if duration is None and started_at and finished_at:
+                duration = (finished_at - started_at).total_seconds()
 
-    new_run = models.Run(
-        pipeline_id=pipeline.id,
-        status=models.RunStatus(event.status.value),
-        started_at=started_at,
-        finished_at=finished_at,
-        duration_sec=duration,
-        branch=event.branch,
-        commit=event.commit,
-        triggered_by=event.triggered_by,
-    )
-    db.add(new_run)
-    db.commit()
-    db.refresh(new_run)
-
-    logger.info(
-        f"[ingest] pipeline={pipeline.name} status={event.status} "
-        f"start={started_at} finish={finished_at} by={event.triggered_by}"
-    )
-
-    if event.status == schemas.RunStatus.failure:
-        subj = f"[CI/CD] Failure: {pipeline.name} @ {finished_at or started_at}"
-        body = (
-            f"Pipeline: {pipeline.name}\n"
-            f"Status: FAILURE\n"
-            f"Started: {started_at}\n"
-            f"Finished: {finished_at}\n"
-            f"Duration(s): {duration}"
+        new_run = models.Run(
+            pipeline_id=pipeline.id,
+            status=models.RunStatus(event.status.value),
+            started_at=started_at,
+            finished_at=finished_at,
+            duration_sec=duration,
+            branch=event.branch,
+            commit=event.commit,
+            triggered_by=event.triggered_by,
         )
-        send_failure_alert(subj, body)
+        db.add(new_run)
+        db.commit()
+        db.refresh(new_run)
 
-    # Recompute & broadcast metrics (JSON-safe)
-    summary = compute_summary_metrics(db, minutes=None)
-    asyncio.create_task(ws_manager.broadcast({"type": "metrics_update", "payload": jsonable_encoder(summary)}))
+        logger.info(
+            f"[ingest] pipeline={pipeline.name} status={event.status} "
+            f"start={started_at} finish={finished_at} by={event.triggered_by}"
+        )
 
-    return schemas.RunOut(
-        id=new_run.id,
-        pipeline=pipeline.name,
-        status=schemas.RunStatus(new_run.status.value),
-        started_at=new_run.started_at,
-        finished_at=new_run.finished_at,
-        duration_sec=new_run.duration_sec,
-        branch=new_run.branch,
-        commit=new_run.commit,
-        triggered_by=new_run.triggered_by,
-    )
+        if event.status == schemas.RunStatus.failure:
+            subj = f"[CI/CD] Failure: {pipeline.name} @ {finished_at or started_at}"
+            body = (
+                f"Pipeline: {pipeline.name}\n"
+                f"Status: FAILURE\n"
+                f"Started: {started_at}\n"
+                f"Finished: {finished_at}\n"
+                f"Duration(s): {duration}"
+            )
+            try:
+                send_failure_alert(subj, body)
+            except Exception as e:
+                logger.warning(f"[alerts] send_failure_alert failed: {e}")
+
+        # Recompute & broadcast metrics (JSON-safe)
+        summary = compute_summary_metrics(db, minutes=None)
+        asyncio.create_task(ws_manager.broadcast({"type": "metrics_update", "payload": jsonable_encoder(summary)}))
+
+        return schemas.RunOut(
+            id=new_run.id,
+            pipeline=pipeline.name,
+            status=schemas.RunStatus(new_run.status.value),
+            started_at=new_run.started_at,
+            finished_at=new_run.finished_at,
+            duration_sec=new_run.duration_sec,
+            branch=new_run.branch,
+            commit=new_run.commit,
+            triggered_by=new_run.triggered_by,
+        )
+    except Exception as e:
+        db.rollback()
+        logger.exception(f"[ingest] error: {e}")
+        # Surface the error to the client so your workflow logs show the reason
+        raise HTTPException(status_code=400, detail=str(e))
 
 # ---------- Reads ----------
 @app.get("/api/runs", response_model=List[schemas.RunOut])
