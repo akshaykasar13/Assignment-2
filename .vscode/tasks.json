@@ -1,0 +1,21 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Compose: up (build)",
+      "type": "shell",
+      "command": "docker compose up --build",
+      "isBackground": true
+    },
+    {
+      "label": "Compose: down",
+      "type": "shell",
+      "command": "docker compose down -v"
+    },
+    {
+      "label": "Seed: simulate (PowerShell)",
+      "type": "shell",
+      "command": "Invoke-RestMethod -Method Post -Uri \"http://localhost:8000/api/simulate?count=20&fail_rate=0.35\" -ContentType \"application/json\" -Body '{\"pipelines\":[\"web\",\"api\",\"worker\"]}'"
+    }
+  ]
+}

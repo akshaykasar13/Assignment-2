@@ -1,0 +1,28 @@
+### Health
+GET http://localhost:8000/health
+
+### Simulate
+POST http://localhost:8000/api/simulate?count=10&fail_rate=0.3
+Content-Type: application/json
+
+{
+  "pipelines": ["web","api","worker"]
+}
+
+### Metrics
+GET http://localhost:8000/api/metrics/summary?minutes=1440
+
+### Runs
+GET http://localhost:8000/api/runs?limit=20
+
+### Ingest One Failure (should email if SMTP set)
+POST http://localhost:8000/api/events/run
+Content-Type: application/json
+
+{
+  "pipeline": "web",
+  "status": "failure",
+  "branch": "main",
+  "commit": "deadbee",
+  "triggered_by": "akshay"
+}
