@@ -5,10 +5,10 @@ on:
     branches: [ main ]
   workflow_dispatch:
     inputs:
-      force_fail: false
+      force_fail:
         description: 'Force the job to fail (easy failure test)'
-        type: boolean
-        default: true
+        required: false
+        default: "true"   # default is string "true"
 
 env:
   PIPELINE_NAME: ${{ github.workflow }}
@@ -23,27 +23,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # mark start time (unix seconds) for duration calculation
       - name: Mark start time
         shell: pwsh
         run: |
           $ts = [int][double]::Parse((Get-Date -UFormat %s))
           "START_TS=$ts" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      # do some trivial work (no Node/Python required)
       - name: Do some work
         shell: pwsh
         run: |
           Write-Host "Running simple step on self-hosted runner..."
           Start-Sleep -Seconds 3
 
-      # deliberately fail if requested (lets you test alerts + UI)
       - name: Fail intentionally (for testing)
-        if: ${{ inputs.force_fail == true }}
+        if: ${{ github.event.inputs.force_fail == 'true' }}
         shell: pwsh
         run: exit 1
 
-      # always notify the dashboard (success or failure)
       - name: Notify dashboard
         if: ${{ always() }}
         shell: pwsh
@@ -68,6 +64,4 @@ jobs:
             triggered_by = "${{ github.actor }}"
           } | ConvertTo-Json -Depth 4
 
-          Write-Host "Posting to $env:DASHBOARD_URL/api/events/run"
-          Write-Host $body
           Invoke-RestMethod -Method Post -Uri "$env:DASHBOARD_URL/api/events/run" -ContentType "application/json" -Body $body
