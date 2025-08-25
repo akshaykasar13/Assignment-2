@@ -1,4 +1,4 @@
-name: ci-cd pipeline
+name: CI (Self-Hosted → Dashboard)
 
 on:
   push:
