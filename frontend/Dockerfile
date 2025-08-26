@@ -1,5 +1,5 @@
 # Frontend Dockerfile (no package-lock required)
-FROM node:20-alpine...1234
+FROM node:20-alpine
 
 WORKDIR /app
 
