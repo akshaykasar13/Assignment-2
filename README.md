@@ -42,11 +42,13 @@ copy frontend\.env.example frontend\.env
 ```
 
 # Gmail alerts (optional but recommended)
+```
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=your_email@gmail.com
 SMTP_PASS=your_gmail_app_password   # Gmail App Password (not your normal password)
 ALERT_TO=recipient@gmail.com
+```
 
 **frontend/.env:**
 ```env
