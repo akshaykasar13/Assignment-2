@@ -99,42 +99,42 @@ This repository ships with a workflow at **.github/workflows/ci.yml** that posts
 ---
 
 ## 🤖 How AI Tools Were Used (with prompt examples)
-AI assisted scaffolding, debugging, and Windows-friendly CI:
+1.AI assisted scaffolding, debugging, and Windows-friendly CI:
 
-“Create FastAPI + SQLAlchemy models for pipeline runs (enum status/timestamps/duration) and an ingest endpoint.”
+2.Create FastAPI + SQLAlchemy models for pipeline runs (enum status/timestamps/duration) and an ingest endpoint.”
 
-“Fix CORS so React on http://localhost:5173
+3.Fix CORS so React on http://localhost:5173
  can call FastAPI on :8000; include preflight, allow localhost & 127.0.0.1.”
 
-“GitHub Actions POST returns 500—show a Windows PowerShell step that prints the API error body.”
+4.GitHub Actions POST returns 500—show a Windows PowerShell step that prints the API error body.”
 
-“asyncio.create_task fails in a sync FastAPI route—refactor to BackgroundTasks for websocket broadcasting.”
+5.asyncio.create_task fails in a sync FastAPI route—refactor to BackgroundTasks for websocket broadcasting.”
 
-“PostgreSQL GROUP BY error—update SQLAlchemy aggregate to group by id & name and count successes/failures.”
+6.PostgreSQL GROUP BY error—update SQLAlchemy aggregate to group by id & name and count successes/failures.”
 
-“Write Dockerfiles and docker-compose for FastAPI, Vite, Postgres (local dev).”
+7.Write Dockerfiles and docker-compose for FastAPI, Vite, Postgres (local dev).”
 
 ---
 ## 🔍 Key Learning & Assumptions
-Learning
+**Learning**
 
-CORS: exact origins matter (no trailing slash). For dev, CORS_ALLOW_ALL=1 is simplest; harden later.
+1.CORS: exact origins matter (no trailing slash). For dev, CORS_ALLOW_ALL=1 is simplest; harden later.
 
-Sync vs async: use BackgroundTasks for work triggered in sync routes.
+2.Sync vs async: use BackgroundTasks for work triggered in sync routes.
 
-Windows runners: default shell is powershell, not pwsh.
+3.Windows runners: default shell is powershell, not pwsh.
 
-Surface errors: in Actions, use Invoke-WebRequest to print the error body.
+4.Surface errors: in Actions, use Invoke-WebRequest to print the error body.
 
-Postgres: include all non-aggregated columns in GROUP BY; use case(..., else_=0) for counts.
+5.Postgres: include all non-aggregated columns in GROUP BY; use case(..., else_=0) for counts.
 
-Assumptions
+**Assumptions**
 
-Self-hosted runner is on the same machine (DASHBOARD_URL=http://localhost:8000).
+1.Self-hosted runner is on the same machine (DASHBOARD_URL=http://localhost:8000).
 
-Timestamps are UTC.
+2.Timestamps are UTC.
 
-Target use is local dev/demo; add API key + strict CORS if exposing publicly.
+3.Target use is local dev/demo; add API key + strict CORS if exposing publicly.
 
 
 ## 📄 License
