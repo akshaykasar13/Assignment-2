@@ -26,56 +26,7 @@ A comprehensive, production-ready dashboard for monitoring CI/CD pipeline health
 
 ---
 
-## 📁 Repository Structure
-
-```
-ci-cd-dashboard/
-  docker-compose.yml
-  README.md
-  tests.http
-  .vscode/
-    tasks.json
-    launch.json
-  backend/
-    Dockerfile
-    requirements.txt
-    .env.example
-    main.py
-    database.py
-    models.py
-    schemas.py
-    emailer.py
-    websocket_manager.py
-    utils.py
-    scripts/
-      simulate_events.py
-  frontend/
-    Dockerfile
-    .env.example
-    index.html
-    vite.config.js
-    package.json
-    public/
-      favicon.svg
-    src/
-      main.jsx
-      App.jsx
-      api.js
-      ws.js
-      components/
-        Header.jsx
-        MetricsCards.jsx
-        RunsTable.jsx
-        StatusPill.jsx
-        LastBuild.jsx
-  .github/
-    workflows/
-      ci.yml
-```
-
----
-
-## 🚀 Quick Start 
+## 🚀 Setup & Run Instructions
 
 ### 1) Prerequisites
 - **Docker Desktop** (WSL2 backend)
@@ -118,19 +69,6 @@ Invoke-RestMethod -Method Post -Uri "http://localhost:8000/api/simulate?count=20
   -ContentType "application/json" `
   -Body '{"pipelines":["web","api","worker"]}'
 ```
-
-**Inside backend container:**
-```powershell
-docker exec -it <backend-container-name> python scripts/simulate_events.py --pipelines "web,api,worker" --count 20 --fail-rate 0.35
-```
-
-**curl (CMD):**
-```bash
-curl -X POST "http://localhost:8000/api/simulate?count=20&fail_rate=0.35" ^
-  -H "Content-Type: application/json" ^
-  -d "{\"pipelines\":[\"web\",\"api\",\"worker\"]}"
-```
-
 The UI updates **instantly** via WebSocket.
 
 ---
@@ -151,16 +89,51 @@ This repository ships with a workflow at **.github/workflows/ci.yml** that posts
 ### 3) Run the workflow
 - GitHub → **Actions → CI (Self-Hosted -> Dashboard) → Run workflow**.
 - Pick **force_fail = true/false** to simulate a failing/successful pipeline.
-- The workflow:
-  - Probes `GET /health`
-  - Runs a trivial step
-  - **Always posts** a run event with status, duration, timestamps, branch, commit, and actor.
 
 **Verify arrivals:**  
 - API: <http://localhost:8000/api/runs?limit=20>  
 - Dashboard: <http://localhost:5173> (cards, last build, table update live)
 
 ---
+
+## 🤖 How AI Tools Were Used (with prompt examples)
+AI assisted scaffolding, debugging, and Windows-friendly CI:
+
+“Create FastAPI + SQLAlchemy models for pipeline runs (enum status/timestamps/duration) and an ingest endpoint.”
+
+“Fix CORS so React on http://localhost:5173
+ can call FastAPI on :8000; include preflight, allow localhost & 127.0.0.1.”
+
+“GitHub Actions POST returns 500—show a Windows PowerShell step that prints the API error body.”
+
+“asyncio.create_task fails in a sync FastAPI route—refactor to BackgroundTasks for websocket broadcasting.”
+
+“PostgreSQL GROUP BY error—update SQLAlchemy aggregate to group by id & name and count successes/failures.”
+
+“Write Dockerfiles and docker-compose for FastAPI, Vite, Postgres (local dev).”
+
+---
+## 🔍 Key Learning & Assumptions
+Learning
+
+CORS: exact origins matter (no trailing slash). For dev, CORS_ALLOW_ALL=1 is simplest; harden later.
+
+Sync vs async: use BackgroundTasks for work triggered in sync routes.
+
+Windows runners: default shell is powershell, not pwsh.
+
+Surface errors: in Actions, use Invoke-WebRequest to print the error body.
+
+Postgres: include all non-aggregated columns in GROUP BY; use case(..., else_=0) for counts.
+
+Assumptions
+
+Self-hosted runner is on the same machine (DASHBOARD_URL=http://localhost:8000).
+
+Timestamps are UTC.
+
+Target use is local dev/demo; add API key + strict CORS if exposing publicly.
+
 
 ## 📄 License
 
