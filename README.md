@@ -1,7 +1,11 @@
-CI/CD Pipeline Health Dashboard 🚀
+# CI/CD Pipeline Health Dashboard
+
 A comprehensive, production-ready dashboard for monitoring CI/CD pipeline health with real-time metrics, alerting, and modern observability features.
 
-🌟 Features
+---
+
+## ✨ Features
+
 - **Ingestion API**  For pipeline run events (success/failure, duration, timestamps, metadata).
 - **Real-time Pipeline Monitoring** Responsive React frontend with real-time update via WebSocket (Last build status, Success/Failure counts, Success rate, Avg duration).
 - **Smart Alerting** Gmail notifications for pipeline failures
@@ -9,56 +13,22 @@ A comprehensive, production-ready dashboard for monitoring CI/CD pipeline health
 - **Production Ready** Dockerized, scalable architecture with monitoring
 - **Industry Standards** Follows DevOps best practices and patterns
 
-🏗️ Architecture
-Backend: Python FastAPI, SQLAlchemy 2.x
-DB: PostgreSQL (Docker)
-Frontend: React (Vite)
-Alerting: Gmail SMTP (optional)
-Containerization: Docker & docker-compose
-CI Source: GitHub Actions (self-hosted runner on your Windows machine)
+---
 
-🚀 Quick Start
-Prerequisites
-Docker & Docker Compose
-VS Code
-Node 20+ and Python 3.11+ if running outside Docker
-PostgreSQL (for local development)
-Using Docker (Recommended)
-# Clone the repository
-git clone <your-repo-url>
-cd ci-cd-dashboard
+## 🧱 Architecture
 
-2) Configure environment
-copy backend\.env.example backend\.env
-copy frontend\.env.example frontend\.env
+- **Backend:** Python (FastAPI), SQLAlchemy 2.x
+- **Database:** PostgreSQL (Docker)
+- **Frontend:** React (Vite)
+- **Alerting:** Gmail SMTP
+- **CI/CD Source:** GitHub Actions (self-hosted runner on your Windows machine)
+- **Containerization:** Docker & docker-compose
 
-In backend/.env, set SMTP if you want email alerts:
+---
 
-SMTP_USER=your_email@gmail.com
-SMTP_PASS=your_app_password   # Gmail App Password (not your normal password)
-ALERT_TO=recipient@gmail.com
+## 📁 Repository Structure
 
-3) Launch everything
-docker compose up --build
-API: http://localhost:8000/docs
-Frontend: http://localhost:5173
-
-# Start all services
-docker-compose up -d
-
-4) Seed some runs (choose one)
-# PowerShell
-Invoke-RestMethod -Method Post -Uri "http://localhost:8000/api/simulate?count=20&fail_rate=0.35" -ContentType "application/json" -Body '{"pipelines":["web","api","worker"]}'
-
-# or inside the backend container
-docker exec -it cicd_backend python scripts/simulate_events.py --pipelines "web,api,worker" --count 20 --fail-rate 0.35
-
-# or curl (cmd)
-curl -X POST "http://localhost:8000/api/simulate?count=20&fail_rate=0.35" -H "Content-Type: application/json" -d "{"pipelines":["web","api","worker"]}"
-
-The frontend updates in real time via WebSocket.
-
-Project Structure
+```
 ci-cd-dashboard/
   docker-compose.yml
   README.md
@@ -103,23 +73,95 @@ ci-cd-dashboard/
       ci.yml
 ```
 
-Useful API endpoints
-GET /health – liveness
-GET /api/metrics/summary?minutes=1440 – metrics snapshot
-GET /api/runs?limit=50 – recent runs
-POST /api/events/run – ingest a run event
-POST /api/simulate?count=10&fail_rate=0.25 – generate sample runs
-WS /ws/metrics – realtime push on new events
+---
 
-🤝 Contributing
-Fork the repository
-Create a feature branch
-Make your changes
-Add tests
-Submit a pull request
+## 🚀 Quick Start 
+
+### 1) Prerequisites
+- **Docker Desktop** (WSL2 backend)
+- **VS Code**
+- **Python 3.11+**, **Node 20+**
+
+### 2) Configure environment
+Copy templates and set variables:
+
+```powershell
+copy backend\.env.example backend\.env
+copy frontend\.env.example frontend\.env
+```
+
+# Gmail alerts (optional but recommended)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your_email@gmail.com
+SMTP_PASS=your_gmail_app_password   # Gmail App Password (not your normal password)
+ALERT_TO=recipient@gmail.com
+
+**frontend/.env:**
+```env
+VITE_API_URL=http://localhost:8000
+```
+
+### 3) Launch with Docker
+
+```powershell
+docker compose up --build
+```
+- Backend: <http://localhost:8000/docs> 
+- Frontend: <http://localhost:5173>
+
+### 4) Seed sample data (choose one)
+
+**PowerShell (host):**
+```powershell
+Invoke-RestMethod -Method Post -Uri "http://localhost:8000/api/simulate?count=20&fail_rate=0.35" `
+  -ContentType "application/json" `
+  -Body '{"pipelines":["web","api","worker"]}'
+```
+
+**Inside backend container:**
+```powershell
+docker exec -it <backend-container-name> python scripts/simulate_events.py --pipelines "web,api,worker" --count 20 --fail-rate 0.35
+```
+
+**curl (CMD):**
+```bash
+curl -X POST "http://localhost:8000/api/simulate?count=20&fail_rate=0.35" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"pipelines\":[\"web\",\"api\",\"worker\"]}"
+```
+
+The UI updates **instantly** via WebSocket.
+
+---
+
+## 🤖 GitHub Actions Integration (Self-Hosted Runner)
+
+This repository ships with a workflow at **.github/workflows/ci.yml** that posts job results to your dashboard.
+
+### 1) Add a self-hosted runner (Windows)
+1. GitHub → **Settings → Actions → Runners → New self-hosted runner → Windows**.
+2. Follow the commands (`config.cmd`, then `run.cmd`) and keep the runner running.
+
+### 2) Set repository secret
+- **Settings → Secrets and variables → Actions → New repository secret**
+  - **Name:** `DASHBOARD_URL`
+  - **Value:** `http://localhost:8000`
+
+### 3) Run the workflow
+- GitHub → **Actions → CI (Self-Hosted -> Dashboard) → Run workflow**.
+- Pick **force_fail = true/false** to simulate a failing/successful pipeline.
+- The workflow:
+  - Probes `GET /health`
+  - Runs a trivial step
+  - **Always posts** a run event with status, duration, timestamps, branch, commit, and actor.
+
+**Verify arrivals:**  
+- API: <http://localhost:8000/api/runs?limit=20>  
+- Dashboard: <http://localhost:5173> (cards, last build, table update live)
+
+---
 
 ## 📄 License
 
 MIT (or your preferred license).
-
-Built with ❤️ using modern DevOps practices and industry standards
